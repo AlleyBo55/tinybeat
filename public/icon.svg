@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <filter id="f" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0a0a12"/>
+  <!-- falling note, glowing -->
+  <rect x="27" y="10" width="10" height="20" rx="4" fill="url(#g)" filter="url(#f)" opacity=".85"/>
+  <rect x="27" y="10" width="10" height="20" rx="4" fill="url(#g)"/>
+  <!-- keys -->
+  <rect x="8" y="38" width="48" height="18" rx="3" fill="#ece7dc"/>
+  <g fill="#0a0a12">
+    <rect x="15" y="38" width="4" height="10" rx="1"/>
+    <rect x="22" y="38" width="4" height="10" rx="1"/>
+    <rect x="36" y="38" width="4" height="10" rx="1"/>
+    <rect x="43" y="38" width="4" height="10" rx="1"/>
+    <rect x="50" y="38" width="4" height="10" rx="1"/>
+  </g>
+  <!-- the lit key -->
+  <rect x="27.5" y="38" width="9" height="18" rx="2" fill="url(#g)" opacity=".9"/>
+</svg>

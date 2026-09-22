@@ -2,22 +2,28 @@
   "name": "tinybeat",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "npx serve out",
+    "lint": "eslint",
+    "check": "node --experimental-strip-types --import ./scripts/resolve-ts.mjs scripts/check-encoding.mts",
+    "check:midi": "node --experimental-strip-types --import ./scripts/resolve-ts.mjs scripts/check-midi.mts",
+    "check:suggest": "node --experimental-strip-types --import ./scripts/resolve-ts.mjs scripts/check-suggest.mts"
   },
   "dependencies": {
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "0.186.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "0.186.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
