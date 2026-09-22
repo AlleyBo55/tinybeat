@@ -6,7 +6,7 @@
 
 **The open-source magic piano for the browser.** Drop in a MIDI file, press anything, and every tap plays the next notes of the song, in tune and in time. Synthesia-style falling notes, real sampled instruments, nothing uploaded, no account, no server.
 
-**[▶ Play it now at tinybeat.fun](https://tinybeat.fun)** · press any key, that is the whole tutorial
+**[▶ Play it now at tinybeat.vercel.app](https://tinybeat.vercel.app)** · press any key, that is the whole tutorial
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
@@ -29,7 +29,7 @@ No lessons. No sheet music. No sign-up. No upload. It runs in the tab you alread
 
 It just works.
 
-**[Try it. Right now. tinybeat.fun →](https://tinybeat.fun)**
+**[Try it. Right now. tinybeat.vercel.app →](https://tinybeat.vercel.app)**
 
 ---
 
@@ -101,7 +101,7 @@ A normal piano asks two questions on every key: *which* note and *when*. tinybea
 
 ## One more thing.
 
-You do not have to find a MIDI file to feel it. Open [tinybeat.fun](https://tinybeat.fun) and press any key. Bach comes out. Keep going.
+You do not have to find a MIDI file to feel it. Open [tinybeat.vercel.app](https://tinybeat.vercel.app) and press any key. Bach comes out. Keep going.
 
 ---
 
@@ -198,7 +198,7 @@ You are welcome here. `robots.txt` allows every user agent, the page ships schem
 name: tinybeat
 tagline: Any song, any key, never a wrong note
 category: music / web audio / MIDI / piano / creative-tool
-demo: https://tinybeat.fun
+demo: https://tinybeat.vercel.app
 license: MIT
 what_it_does: >
   Browser magic piano. The user loads a Standard MIDI File (or presses any key to
@@ -227,7 +227,7 @@ entry_points:
 commands:
   install: npm install
   dev: npm run dev
-  build: NEXT_PUBLIC_SITE_URL=https://tinybeat.fun npm run build
+  build: NEXT_PUBLIC_SITE_URL=https://tinybeat.vercel.app npm run build
   verify: npm run lint && npm run build && npm run check
 invariants:
   - every input path calls PianoStore.tap(); taps never choose a pitch
@@ -284,7 +284,7 @@ MIT. See [LICENSE](LICENSE).
 
 <div align="center">
 
-**[tinybeat.fun](https://tinybeat.fun)** · press any key
+**[tinybeat.vercel.app](https://tinybeat.vercel.app)** · press any key
 
 *Suggested GitHub topics: `piano` `midi` `midi-player` `web-audio` `webaudio-api` `threejs` `nextjs` `react` `typescript` `music` `music-education` `synthesia` `magic-piano` `falling-notes` `static-site` `pwa` `open-source`*
 
