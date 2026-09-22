@@ -6,6 +6,7 @@
 // soundfont has loaded; until then, and for the synthetic instruments, the
 // data-driven synth voice plays so the first tap is never silent.
 
+import type { DrumKind } from "./beats";
 import { type Instrument, instrumentById } from "./instruments";
 import { midiToFreq } from "./pattern";
 import { loadSoundfont, pickSample, type SampleBank } from "./samples";
@@ -363,50 +364,83 @@ export class PianoAudio {
     this.track(src, t + dur + 0.05);
   }
 
+  /** One kit hit `when` seconds from now, for the generated beat. */
+  hit(kind: DrumKind, when: number, velocity: number): void {
+    const ctx = this.context();
+    if (ctx.state === "suspended") void ctx.resume();
+    this.hitAt(kind, ctx.currentTime + 0.004 + Math.max(0, when), velocity);
+  }
+
   /** General MIDI percussion, rendered by family. */
   private drum(gm: number, t: number, velocity: number): void {
-    const ctx = this.ctx!;
+    this.hitAt(gmDrumKind(gm), t, velocity);
+  }
+
+  private hitAt(kind: DrumKind, t: number, velocity: number): void {
     const v = 0.4 + 0.6 * Math.min(1, velocity);
     const out = this.drumBus;
-    const kick = [35, 36, 41, 43, 45].includes(gm);
-    const snare = [37, 38, 40, 47, 48, 50].includes(gm);
-    const clap = gm === 39 || gm === 82;
-    const openHat = [46, 49, 51, 52, 53, 55, 57, 59].includes(gm);
-    if (kick) {
-      const osc = ctx.createOscillator();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(165, t);
-      osc.frequency.exponentialRampToValueAtTime(44, t + 0.13);
-      const amp = ctx.createGain();
-      amp.gain.setValueAtTime(0.0001, t);
-      amp.gain.exponentialRampToValueAtTime(0.95 * v, t + 0.002);
-      amp.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
-      osc.connect(amp).connect(out);
-      osc.start(t);
-      this.track(osc, t + 0.45);
-      this.burst(t, 0.012, "highpass", 2000, 0.4 * v, out);
-    } else if (snare) {
-      this.burst(t, 0.19, "bandpass", 1900, 0.7 * v, out, 0.7);
-      const osc = ctx.createOscillator();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(225, t);
-      osc.frequency.exponentialRampToValueAtTime(140, t + 0.08);
-      const amp = ctx.createGain();
-      amp.gain.setValueAtTime(0.0001, t);
-      amp.gain.exponentialRampToValueAtTime(0.55 * v, t + 0.002);
-      amp.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-      osc.connect(amp).connect(out);
-      osc.start(t);
-      this.track(osc, t + 0.15);
-    } else if (clap) {
-      for (let k = 0; k < 3; k++) this.burst(t + k * 0.011, 0.025, "bandpass", 1200, 0.42 * v, out, 1.2);
-      this.burst(t + 0.033, 0.16, "bandpass", 1200, 0.45 * v, out, 1.2);
-    } else if (openHat) {
-      this.burst(t, 0.32, "highpass", 6500, 0.28 * v, out);
-    } else {
-      this.burst(t, 0.055, "highpass", 7500, 0.3 * v, out);
+    switch (kind) {
+      case "kick":
+        this.thump(t, "sine", 165, 44, 0.13, 0.95 * v, 0.38);
+        this.burst(t, 0.012, "highpass", 2000, 0.4 * v, out);
+        return;
+      case "kick808":
+        // deeper and longer: the sub sits under the song rather than punching through it
+        this.thump(t, "sine", 150, 36, 0.2, 0.95 * v, 0.8);
+        this.burst(t, 0.01, "highpass", 1500, 0.3 * v, out);
+        return;
+      case "snare":
+        this.burst(t, 0.19, "bandpass", 1900, 0.7 * v, out, 0.7);
+        this.thump(t, "triangle", 225, 140, 0.08, 0.55 * v, 0.12);
+        return;
+      case "clap":
+        for (let k = 0; k < 3; k++) this.burst(t + k * 0.011, 0.025, "bandpass", 1200, 0.42 * v, out, 1.2);
+        this.burst(t + 0.033, 0.16, "bandpass", 1200, 0.45 * v, out, 1.2);
+        return;
+      case "hato":
+        this.burst(t, 0.32, "highpass", 6500, 0.28 * v, out);
+        return;
+      case "hatc":
+        this.burst(t, 0.055, "highpass", 7500, 0.3 * v, out);
+        return;
+      case "rim":
+        this.burst(t, 0.03, "bandpass", 3200, 0.5 * v, out, 3);
+        this.thump(t, "triangle", 900, 700, 0.02, 0.35 * v, 0.03);
+        return;
+      case "shaker":
+        this.burst(t, 0.07, "highpass", 9000, 0.16 * v, out);
+        return;
+      case "tamb":
+        this.burst(t, 0.12, "bandpass", 6800, 0.22 * v, out, 1.5);
+        this.burst(t + 0.014, 0.08, "highpass", 8000, 0.14 * v, out);
+        return;
     }
   }
+
+  /** A pitched drum body: one oscillator sweeping `f0` to `f1` over `sweep` seconds, gone by `decay`. */
+  private thump(t: number, wave: OscillatorType, f0: number, f1: number, sweep: number, peak: number, decay: number): void {
+    const ctx = this.ctx!;
+    const osc = ctx.createOscillator();
+    osc.type = wave;
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f1, t + sweep);
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, t);
+    amp.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + 0.002);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    osc.connect(amp).connect(this.drumBus);
+    osc.start(t);
+    this.track(osc, t + decay + 0.07);
+  }
+}
+
+/** Which kit sound a General MIDI drum note is closest to. */
+function gmDrumKind(gm: number): DrumKind {
+  if ([35, 36, 41, 43, 45].includes(gm)) return "kick";
+  if ([37, 38, 40, 47, 48, 50].includes(gm)) return "snare";
+  if (gm === 39 || gm === 82) return "clap";
+  if ([46, 49, 51, 52, 53, 55, 57, 59].includes(gm)) return "hato";
+  return "hatc";
 }
 
 /** Exponentially decaying stereo noise as a reverb impulse (a "hall" without downloading one). */

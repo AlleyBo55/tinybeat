@@ -53,6 +53,18 @@ Every item below is implemented in this repository today. Nothing here is a road
 - **Manual timing.** Every tap plays the next notes immediately. The rhythm is entirely yours.
 - Switching timing mode always shows a short, dismissable confirmation, because it changes what every tap does.
 
+### The beat
+
+A drum pattern laid on the song's own bars, so a solo piano piece gets a floor under it. The song keeps every note it had.
+
+- **Three choices**: off, the file's own drum parts exactly as written, or one of **fourteen genres**: Lo-fi, Rap, R&B, Pop, Rock, Disco, House, EDM, Eurobeat, Trap, Drum & bass, Reggaeton, Reggae, Bossa nova.
+- **Hits sit on the bar grid, not on your notes.** The pattern is placed by MIDI ticks, so an off-grid or rubato melody never drags the drums out of time.
+- **A genre replaces the file's drums** so two kits never fight, and your choice follows you from song to song.
+- **Tempo is negotiated, not forced.** The pattern runs at a power of two of the song's tempo, and the song is nudged toward the genre's own: up to 25 % faster, but no more than 10 % slower, because a dragged song sounds broken long before a hurried one does. Each candidate is scored on how far the pattern still misses its tempo plus half of how far the song had to move, so the song's speed is protected. The speed slider is right there if you disagree.
+- **Swing and human feel per genre.** Swing delays the offbeat 16ths; the human amount loosens timing and levels a little so the loop does not sound stamped out.
+- Easy timing only. Manual timing has no tempo to lay a beat on, and the panel says so and offers to switch.
+- Only grooves that hold up are included. A genre this synthesised kit cannot do justice is left out rather than shipped wrong.
+
 ### Sound
 
 - **Seventeen voices, fourteen of them sampled from real recordings**: Grand Piano, 'In the End' Piano, Electric Piano, Clean Guitar, Synth Bass, Organ, Synth Lead, Synth Pad, Strings, Synth Brass, Music Box, Bells, Marimba, Harp. Three are electronic by nature and always use the built-in synth: Pluck, Saw Pluck, 8-bit.
@@ -142,6 +154,7 @@ src/
   lib/
     piano-store.ts        the state machine: tap(), Easy/Manual timing clock, track selection, upcoming()
     piano-audio.ts        polyphonic synth, drum kit, reverb, master chain, sample playback
+    beats.ts              the generated beat: genre patterns as data, plus the tempo planner
     samples.ts            General MIDI soundfont loader (fetch once → decode → cache)
     instruments.ts        the 17 voices as data, tap modes, song presets
     suggest.ts            "Pick for me": instrument + reverb from the file's own metadata
@@ -173,6 +186,8 @@ Pull requests are welcome. Small, focused, and verified beats large and clever.
 
 Good first contributions: a real test runner around `midi.ts` and `piano-store.ts`, more soundfont-backed instruments (one entry in `instruments.ts` plus a FluidR3_GM name), keyboard-accessibility passes on the sheets, translations of the on-page copy.
 
+Recipe: **add a genre.** Append one entry to `GENRES` in `src/lib/beats.ts`: an `id`, a `label`, a one-line `hint`, the `bpm` the groove wants, `swing`, `human`, and one `lanes` string per kit sound. Each bar is exactly 16 characters (`1`–`9` for a hit and its level, `.` for a rest, `|` only as a bar separator); a two-bar lane tiles against one-bar lanes. Steps read `1 e + a 2 e + a 3 e + a 4 e + a`, and swing moves only the odd steps, so anything meant to stay straight belongs on an even one. No other file changes. Only add a groove you can defend beat by beat, and say in the PR what the pattern is: a recognisable genre played wrong is worse than one that is absent.
+
 Recipe: **add an instrument.** Append one `inst({...})` object to `INSTRUMENTS` in `src/lib/instruments.ts` with a unique `id`, a `label`, a `hint`, synth `layers`, envelope (`attack`/`decay`/`sustain`/`release`), filter settings (`cutoffRatio`/`cutoffMax`/`filterDrop`), `gain`, a `hue`, and optionally `soundfont` (any FluidR3_GM instrument name, for example `"vibraphone"`) with `sampleRelease`. Then map the relevant General MIDI programs to it in `instrumentForProgram()` in `src/lib/suggest.ts`. No other file changes.
 
 ## For AI agents, LLMs, and bots
@@ -190,7 +205,8 @@ what_it_does: >
   start the built-in Bach prelude). Every key press or tap plays the next notes of
   the song in tune; Easy timing keeps the song's own tempo, Manual timing lets the
   user set it. Real sampled instruments (14) plus synth voices (3), Synthesia-style
-  falling notes rendered with three.js. Fully client-side static site.
+  falling notes rendered with three.js. An optional generated beat (14 genres) can
+  be laid on the song's own bar grid. Fully client-side static site.
 inputs: [".mid", ".midi", "audio/midi", "keyboard", "pointer", "touch"]
 outputs: ["Web Audio playback", "WebGL visuals"]
 network: ["GET https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/<instrument>-mp3.js (once per instrument, cached)"]
@@ -206,6 +222,7 @@ entry_points:
   midi_parser: src/lib/midi.ts        # parseMidi(ArrayBuffer) -> ParsedMidi; buildViews()
   instruments: src/lib/instruments.ts # INSTRUMENTS, SONG_PRESETS, TapMode
   auto_sound: src/lib/suggest.ts      # suggestSound(parsed, fileName)
+  beat: src/lib/beats.ts              # GENRES, compileGenre(), planBeat(); PianoStore.setBeat()
   visuals: src/lib/scene.ts
 commands:
   install: npm install
@@ -218,6 +235,8 @@ invariants:
   - no new network, storage, cookies, or telemetry
   - React never runs in the render loop; scene subscribes to the store directly
   - instrument ids and presets stay compatible with the sibling Electron app (key-board)
+  - a genre is only added if its groove is defensible on this kit; ship nothing you cannot verify
+  - beat hits are placed by MIDI ticks on the bar grid, never relative to a note's own time
 not_shipped: Beats mode (src/components/Studio.tsx) exists in the tree but is not mounted by page.tsx
 ```
 
@@ -230,6 +249,9 @@ Same falling-notes idea, different promise. Those tell you which key to hit. tin
 
 **Does it work with any MIDI file?**
 Any Standard MIDI File with note events. Tempo changes and multi-track files are supported; percussion tracks are detected and off by default. Parsing happens entirely in the browser.
+
+**Can I put drums under a solo piano piece?**
+Yes. Open *Beat* and pick a genre; the pattern locks to the song's bars and the tempo is negotiated between the two. Lo-fi is the safe first try. It needs Easy timing.
 
 **Where do I get MIDI files?**
 [bitmidi.com](https://bitmidi.com) is free and linked from the landing page. Any `.mid` you already have works.

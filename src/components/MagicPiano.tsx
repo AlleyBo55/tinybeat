@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { GENRES, genreById } from "@/lib/beats";
 import { cx } from "@/lib/cx";
 import { INSTRUMENTS, SONG_PRESETS, instrumentById } from "@/lib/instruments";
 import { PianoStore, type PianoState, type Timing } from "@/lib/piano-store";
@@ -18,6 +19,7 @@ const SERVER_STATE: PianoState = {
   volume: 1,
   autoSound: true,
   samples: "synth",
+  genre: null,
   position: 0,
   total: 0,
   rolling: false,
@@ -25,7 +27,7 @@ const SERVER_STATE: PianoState = {
   error: null,
 };
 
-type Sheet = "song" | "sound" | null;
+type Sheet = "song" | "sound" | "beat" | null;
 
 const hueCss = (hue: number) => `oklch(74% 0.17 ${hue})`;
 
@@ -118,6 +120,8 @@ export default function MagicPiano() {
   const progress = state.total ? state.position / state.total : 0;
   const instrument = instrumentById(state.instrument);
   const title = song ? song.parsed.name || song.fileName : "";
+  const genre = genreById(state.genre);
+  const fileDrumsOn = !!song && song.parsed.tracks.some((t) => t.percussion && state.selectedTracks.has(t.index));
 
   return (
     <div
@@ -218,6 +222,23 @@ export default function MagicPiano() {
               {state.samples === "loading" ? "loading real sound…" : state.autoSound ? "auto" : ""}
             </span>
           </DockButton>
+          {song && (
+            <>
+              <span className="h-5 w-px bg-white/10" />
+              <DockButton active={sheet === "beat"} onClick={() => setSheet(sheet === "beat" ? null : "beat")} label="Beat options">
+                <span
+                  className={cx(
+                    "size-2 rounded-full transition-colors",
+                    genre || fileDrumsOn ? "bg-rose-400 shadow-[0_0_10px_2px_rgba(251,113,133,0.55)]" : "bg-zinc-600",
+                  )}
+                />
+                Beat
+                <span className="hidden text-[10px] font-normal uppercase tracking-wider text-zinc-500 sm:inline" data-testid="beat">
+                  {genre ? genre.label : fileDrumsOn ? "from the file" : "off"}
+                </span>
+              </DockButton>
+            </>
+          )}
           {song && (
             <>
               <span className="h-5 w-px bg-white/10" />
@@ -354,10 +375,12 @@ export default function MagicPiano() {
             className="card w-full max-w-lg !rounded-t-3xl !rounded-b-none bg-[#0d0d16]/95 !p-5 shadow-2xl backdrop-blur-2xl motion-safe:animate-[sheet-in_.22s_ease-out] sm:!rounded-3xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
-            aria-label={sheet === "song" ? "Song options" : "Sound options"}
+            aria-label={sheet === "song" ? "Song options" : sheet === "beat" ? "Beat options" : "Sound options"}
           >
             {sheet === "song" ? (
               <SongSheet state={state} store={store} onPick={pickFile} onClose={() => setSheet(null)} onTiming={changeTiming} />
+            ) : sheet === "beat" ? (
+              <BeatSheet state={state} store={store} onTiming={changeTiming} />
             ) : (
               <SoundSheet state={state} store={store} />
             )}
@@ -437,6 +460,7 @@ function SongSheet({
               <Slider min={0.5} max={1.5} value={state.speed} onChange={(v) => store.setSpeed(v)} />
             </Field>
           )}
+
 
           <Field label="Each tap plays">
             <Segmented
@@ -526,6 +550,81 @@ function SongSheet({
             </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function BeatSheet({ state, store, onTiming }: { state: PianoState; store: PianoStore; onTiming: (t: Timing) => void }) {
+  const tracks = state.song?.parsed.tracks ?? [];
+  const fileDrums = tracks.filter((t) => t.percussion);
+  const hasFileDrums = fileDrums.length > 0 && fileDrums.length < tracks.length;
+  const fileDrumsOn = fileDrums.length > 0 && fileDrums.every((t) => state.selectedTracks.has(t.index));
+  const genre = genreById(state.genre);
+  const value = genre?.id ?? (fileDrumsOn ? "file" : "off");
+  const chip = (on: boolean) => cx("chip !py-1 !text-xs", on && "bg-white text-black ring-white hover:bg-white");
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <h2 className="text-base font-semibold">Beat</h2>
+        <p className="text-sm text-zinc-400">A drum pattern laid on the song’s own bars. The song keeps every note; the beat gives it a floor.</p>
+      </div>
+
+      <Field label="What plays underneath">
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Beat">
+          <button type="button" role="radio" aria-checked={value === "off"} className={chip(value === "off")} onClick={() => store.setBeat("off")}>
+            Off
+          </button>
+          {hasFileDrums && (
+            <button
+              type="button"
+              role="radio"
+              aria-checked={value === "file"}
+              className={chip(value === "file")}
+              title={`${fileDrums.reduce((n, t) => n + t.noteCount, 0).toLocaleString()} drum hits written in the file`}
+              onClick={() => store.setBeat("file")}
+            >
+              The file’s own drums
+            </button>
+          )}
+          <span className="mx-1 h-6 w-px self-center bg-white/10" />
+          {GENRES.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              role="radio"
+              aria-checked={value === g.id}
+              className={chip(value === g.id)}
+              title={`${g.hint} ${g.bpm} BPM.`}
+              onClick={() => store.setBeat(g.id)}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs leading-relaxed text-zinc-500">
+          {genre
+            ? `${genre.hint} Wants ${genre.bpm} BPM, so the song speed moved to ${Math.round(state.speed * 100)}%. Drag it back if you liked it where it was.`
+            : value === "file"
+              ? "Exactly the drums the file wrote, nothing added or guessed."
+              : "Pick a genre and the pattern locks to the song’s bars. Lo-fi is the safe first try."}
+        </p>
+      </Field>
+
+      {state.timing === "easy" ? (
+        <Field label={`Song speed · ${Math.round(state.speed * 100)}%`}>
+          <Slider min={0.5} max={1.5} value={state.speed} onChange={(v) => store.setSpeed(v)} />
+        </Field>
+      ) : (
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-amber-300/10 px-4 py-3 ring-1 ring-amber-300/20">
+          <p className="text-xs leading-relaxed text-amber-100">
+            The beat plays in Easy timing. In Manual you set the tempo with every tap, so there is no grid to lay it on.
+          </p>
+          <button type="button" className="btn btn-primary h-9 shrink-0 px-4 text-sm" onClick={() => onTiming("easy")}>
+            Switch to Easy
+          </button>
+        </div>
       )}
     </div>
   );

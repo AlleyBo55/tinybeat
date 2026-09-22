@@ -50,6 +50,10 @@ export interface StepNote {
 export interface Step {
   notes: StepNote[];
   velocity: number;
+  /** where this tap sits in the song, for laying a beat on the bar grid */
+  ticks: number;
+  /** seconds per quarter note in force here */
+  beatSeconds: number;
 }
 
 export interface BeatNote extends StepNote {
@@ -64,6 +68,8 @@ export interface Beat {
   notes: BeatNote[];
   /** real length of this beat in seconds, so offsets inside it keep their rhythm */
   beatSeconds: number;
+  /** ticks of the first note in the beat: where the tap lands on the grid */
+  ticks: number;
 }
 
 export interface Views {
@@ -369,7 +375,8 @@ export function buildViews(events: NoteEvent[], ppq: number): Views {
   const stepTimes: number[] = [];
   let i = 0;
   while (i < events.length) {
-    const startTime = events[i].time;
+    const first = events[i];
+    const startTime = first.time;
     const notes: StepNote[] = [];
     const seen = new Set<string>();
     let velocity = 0;
@@ -383,17 +390,18 @@ export function buildViews(events: NoteEvent[], ppq: number): Views {
       velocity = Math.max(velocity, e.velocity);
       i++;
     }
-    steps.push({ notes, velocity: velocity || 0.8 });
+    steps.push({ notes, velocity: velocity || 0.8, ticks: first.ticks, beatSeconds: first.beatSeconds });
     stepTimes.push(startTime);
   }
 
-  const beatMap = new Map<number, { notes: BeatNote[]; time: number; beatSeconds: number }>();
+  const beatMap = new Map<number, { notes: BeatNote[]; time: number; ticks: number; beatSeconds: number }>();
   for (const e of events) {
     const beatIndex = Math.floor(e.ticks / ppq);
     const offset = (e.ticks % ppq) / ppq;
     let entry = beatMap.get(beatIndex);
-    if (!entry) beatMap.set(beatIndex, (entry = { notes: [], time: e.time, beatSeconds: e.beatSeconds }));
+    if (!entry) beatMap.set(beatIndex, (entry = { notes: [], time: e.time, ticks: e.ticks, beatSeconds: e.beatSeconds }));
     entry.time = Math.min(entry.time, e.time);
+    entry.ticks = Math.min(entry.ticks, e.ticks);
     entry.notes.push({ midi: e.midi, offset, duration: e.duration, velocity: e.velocity, percussion: e.percussion, track: e.track });
   }
   // Only beats that contain notes: rests never eat a silent tap.
@@ -402,7 +410,7 @@ export function buildViews(events: NoteEvent[], ppq: number): Views {
     const entry = beatMap.get(k)!;
     const notes = entry.notes.sort((x, y) => x.offset - y.offset);
     const lead = notes.length ? notes[0].offset : 0;
-    return { notes: notes.map((n) => ({ ...n, offset: n.offset - lead })), beatSeconds: entry.beatSeconds };
+    return { notes: notes.map((n) => ({ ...n, offset: n.offset - lead })), beatSeconds: entry.beatSeconds, ticks: entry.ticks };
   });
   const beatTimes = sortedBeats.map((k) => beatMap.get(k)!.time);
 

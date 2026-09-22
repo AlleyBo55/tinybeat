@@ -46,6 +46,25 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en">
       <body className="min-h-dvh">
+        {/*
+          Dev only (stripped from production builds). localhost:3000 is shared by
+          every project on this machine; a service worker another one registered
+          there keeps serving its cached copies of our chunks on a soft reload,
+          which boots a mismatched bundle and blanks the page. Evict it once and
+          reload clean. Does nothing when no worker is registered.
+        */}
+        {process.env.NODE_ENV !== "production" && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html:
+                '"serviceWorker"in navigator&&navigator.serviceWorker.getRegistrations().then(function(r){if(!r.length)return;' +
+                'return Promise.all(r.map(function(x){return x.unregister()}))' +
+                '.then(function(){return"caches"in self?caches.keys():[]})' +
+                '.then(function(k){return Promise.all(k.map(function(n){return caches.delete(n)}))})' +
+                '.then(function(){location.reload()})});',
+            }}
+          />
+        )}
         {/* Instrument recordings come from here after the first tap; warm the connection early. */}
         <link rel="preconnect" href={new URL(SOUNDFONT_BASE).origin} crossOrigin="anonymous" />
         <link rel="dns-prefetch" href={new URL(SOUNDFONT_BASE).origin} />

@@ -15,6 +15,7 @@
 // `onTap` / `onPulse` directly so 60 fps visuals never go through React.
 
 import { DEMO_TITLE, demoMidi } from "./demo";
+import { type BeatChoice, compileGenre, genreById, planBeat, songBpm } from "./beats";
 import { SONG_PRESETS, instrumentById, type TapMode } from "./instruments";
 import { buildViews, parseMidi, type ParsedMidi, type Views } from "./midi";
 import { PianoAudio, type PlayedNote, type SampleState } from "./piano-audio";
@@ -60,6 +61,8 @@ export interface PianoState {
   autoSound: boolean;
   /** whether melodic notes play from recordings, the synth, or are still loading */
   samples: SampleState;
+  /** the generated beat under the song (a genre id), or null for none */
+  genre: string | null;
   position: number;
   total: number;
   /** easy mode: true while the song is running under the player's taps */
@@ -96,6 +99,7 @@ export class PianoStore {
     volume: 1,
     autoSound: true,
     samples: "synth",
+    genre: null,
     position: 0,
     total: 0,
     rolling: false,
@@ -103,6 +107,9 @@ export class PianoStore {
     error: null,
   };
   private views: Views | null = null;
+  // the generated beat: the song's written tempo and how fast the pattern runs against it
+  private songBpm = 120;
+  private beatRate = 1;
   private listeners = new Set<Listener>();
   private tapListeners = new Set<TapListener>();
   private pulseListeners = new Set<Listener>();
@@ -173,6 +180,8 @@ export class PianoStore {
     const melodic = parsed.tracks.filter((t) => !t.percussion).map((t) => t.index);
     const selectedTracks = new Set(melodic.length ? melodic : parsed.tracks.map((t) => t.index));
     this.set({ song: { parsed, fileName }, selectedTracks, error: null, tapped: false });
+    this.songBpm = songBpm(parsed.events);
+    if (this.state.genre) this.planBeat(); // a chosen beat follows the player from song to song
     if (this.state.autoSound) {
       const s = suggestSound(parsed, fileName);
       this.audio.setInstrument(s.instrument);
@@ -220,6 +229,83 @@ export class PianoStore {
     const melodic = song.parsed.tracks.filter((t) => !t.percussion).map((t) => t.index);
     this.set({ selectedTracks: new Set(melodic.length ? melodic : song.parsed.tracks.map((t) => t.index)) });
     this.rebuild();
+  }
+
+  // ---------- the beat ----------
+
+  /**
+   * What plays under the song: nothing, the drum parts written in the file, or
+   * a generated genre pattern on the song's own bars. A genre replaces the
+   * file's drums so two kits never fight. The choice survives song changes.
+   */
+  setBeat(choice: BeatChoice): void {
+    const genre = genreById(choice)?.id ?? null;
+    this.set({ genre });
+    if (!this.state.song) return;
+    this.setFileDrums(choice === "file");
+    if (genre) this.planBeat();
+  }
+
+  /** The file's own drum parts (GM channel 10 or a drum program), on or off together. */
+  private setFileDrums(on: boolean): void {
+    const song = this.state.song!;
+    const drums = song.parsed.tracks.filter((t) => t.percussion).map((t) => t.index);
+    if (!drums.length) return;
+    const next = new Set(this.state.selectedTracks);
+    for (const i of drums) {
+      if (on) next.add(i);
+      else next.delete(i);
+    }
+    if (next.size === 0) return; // a drums-only file has nothing else to play
+    if (next.size === this.state.selectedTracks.size && [...next].every((i) => this.state.selectedTracks.has(i))) return;
+    this.set({ selectedTracks: next });
+    this.rebuild();
+  }
+
+  /** Match the pattern's rate to the song and nudge the song's speed toward the genre's tempo. */
+  private planBeat(): void {
+    const genre = genreById(this.state.genre);
+    if (!genre) return;
+    const plan = planBeat(this.songBpm, genre);
+    this.beatRate = plan.rate;
+    this.setSpeed(plan.speed);
+  }
+
+  /**
+   * Schedule the beat from this tap up to the next one. Hits sit on the bar
+   * grid (by ticks), not on the note, so an off-grid melody never drags them.
+   * Easy mode only: in free mode there is no tempo to lay a beat on.
+   */
+  private layBeat(ticks: number, quarterSec: number, gapSec: number, when: number): void {
+    const genre = genreById(this.state.genre);
+    const song = this.state.song;
+    if (!genre || !song) return;
+    const pattern = compileGenre(genre);
+    const stepSec = quarterSec / (4 * this.beatRate);
+    if (!(stepSec > 0.01)) return;
+    const tickPerStep = song.parsed.ppq / (4 * this.beatRate);
+    const eps = 0.004; // hits inside this of the next tap belong to the next tap
+    let j = Math.ceil((ticks - (eps / quarterSec) * song.parsed.ppq) / tickPerStep);
+    for (let n = 0; n < 256; n++, j++) {
+      const dt = ((j * tickPerStep - ticks) / song.parsed.ppq) * quarterSec;
+      if (dt >= gapSec - eps) break;
+      const hits = pattern.steps[((j % pattern.length) + pattern.length) % pattern.length];
+      if (!hits.length) continue;
+      const swing = j % 2 ? genre.swing * stepSec * 0.5 : 0;
+      const at = when + Math.max(0, dt) + swing;
+      for (const h of hits) {
+        const loose = genre.human;
+        const jitter = loose ? (Math.random() - 0.5) * 0.012 * loose : 0;
+        const level = h.velocity * (1 - loose * 0.25 * Math.random());
+        this.audio.hit(h.kind, at + jitter, level);
+      }
+      // the low drums throb the hit line, so the beat is seen as well as heard
+      if (hits.some((h) => h.kind === "kick" || h.kind === "kick808")) {
+        setTimeout(() => {
+          for (const fn of this.pulseListeners) fn();
+        }, at * 1000);
+      }
+    }
   }
 
   setTapMode(tapMode: TapMode): void {
@@ -431,6 +517,10 @@ export class PianoStore {
 
     const soundsAt = now + delayMs;
     const gap = this.gapAfter(index) * 1000;
+    if (easy && this.state.genre) {
+      const here = this.state.tapMode === "beat" ? views.beats[index] : views.steps[index];
+      this.layBeat(here.ticks, here.beatSeconds / this.state.speed, gap / 1000, delayMs / 1000);
+    }
     // grid-locked: the next step is exactly one gap after this one *should* have sounded
     this.due = (source === "clock" ? this.due : soundsAt) + gap;
     this.gapMs = gap;
