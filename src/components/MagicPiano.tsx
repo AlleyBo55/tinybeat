@@ -156,7 +156,7 @@ export default function MagicPiano() {
             tinybeat
           </div>
           {song && (
-            <div className="hidden items-center gap-2 text-xs sm:flex">
+            <div className="hidden items-center gap-2 text-xs xl:flex">
               <span
                 data-testid="status"
                 className={cx(
@@ -202,7 +202,7 @@ export default function MagicPiano() {
               onClick={pickFile}
               title="Open another song"
               aria-label="Open another song"
-              className="flex size-9 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+              className="hidden size-9 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 hover:text-white sm:flex"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
@@ -232,18 +232,19 @@ export default function MagicPiano() {
                     genre || fileDrumsOn ? "bg-rose-400 shadow-[0_0_10px_2px_rgba(251,113,133,0.55)]" : "bg-zinc-600",
                   )}
                 />
-                Beat
+                <span className="hidden sm:inline">Beat</span>
                 <span className="hidden text-[10px] font-normal uppercase tracking-wider text-zinc-500 sm:inline" data-testid="beat">
                   {genre ? genre.label : fileDrumsOn ? "from the file" : "off"}
                 </span>
               </DockButton>
             </>
           )}
+          {/* below lg the switch lives in the Song sheet only; the bar has no room for it */}
           {song && (
             <>
-              <span className="h-5 w-px bg-white/10" />
-              <div className="flex items-center gap-1.5 pl-1.5" title="Timing mode: who keeps the tempo">
-                <span className="hidden text-[10px] font-medium uppercase tracking-wider text-zinc-500 md:inline">Timing</span>
+              <span className="hidden h-5 w-px bg-white/10 lg:block" />
+              <div className="hidden items-center gap-1.5 pl-1.5 lg:flex" title="Timing mode: who keeps the tempo">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Timing</span>
                 <Segmented
                   compact
                   value={state.timing}
@@ -283,43 +284,50 @@ export default function MagicPiano() {
           className="pointer-events-none absolute inset-x-0 top-0 h-[68%] bg-[radial-gradient(60%_70%_at_50%_38%,rgba(5,5,8,0.88)_0%,rgba(5,5,8,0.55)_55%,transparent_100%)]"
         />
       )}
+      {/* On a phone held sideways (under 500px tall) the keys take most of the
+          height, so the hero shrinks to one headline and the buttons, tucked
+          under the top bar. */}
       {!song && (
         <section
           aria-labelledby="hero-title"
-          className="pointer-events-none absolute inset-x-0 top-[9%] flex flex-col items-center px-6 text-center sm:top-[12%]"
+          className="pointer-events-none absolute inset-x-0 top-[9%] flex flex-col items-center px-6 text-center sm:top-[12%] [@media(max-height:500px)]:top-16"
         >
-          <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-500 motion-safe:animate-[rise_.7s_ease-out_both]">
+          <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-500 motion-safe:animate-[rise_.7s_ease-out_both] [@media(max-height:500px)]:hidden">
             The piano that can’t play a wrong note
           </p>
           <h1
             id="hero-title"
-            className="text-balance text-4xl font-semibold leading-[1.04] tracking-tight sm:text-6xl motion-safe:animate-[rise_.7s_.08s_ease-out_both]"
+            className="text-balance text-4xl font-semibold leading-[1.04] tracking-tight sm:text-6xl motion-safe:animate-[rise_.7s_.08s_ease-out_both] [@media(max-height:500px)]:text-3xl"
           >
             Any song. Any key.
-            <br />
+            <br className="[@media(max-height:500px)]:hidden" />
             Never a wrong note.
           </h1>
-          <p className="mt-5 max-w-xl text-balance text-base text-zinc-300 sm:text-lg motion-safe:animate-[rise_.7s_.16s_ease-out_both]">
+          <p className="mt-5 max-w-xl text-balance text-base text-zinc-300 sm:text-lg motion-safe:animate-[rise_.7s_.16s_ease-out_both] [@media(max-height:500px)]:hidden">
             Drop in a MIDI file and press anything. Every tap plays the next notes of the song, in tune and in time. What’s left is the
             part that was always yours: the feeling.
           </p>
-          <div className="pointer-events-auto mt-8 flex flex-wrap items-center justify-center gap-3 motion-safe:animate-[rise_.7s_.24s_ease-out_both]">
+          <div className="pointer-events-auto mt-8 flex flex-wrap items-center justify-center gap-3 motion-safe:animate-[rise_.7s_.24s_ease-out_both] [@media(max-height:500px)]:mt-3">
             <button
               type="button"
               onClick={startDemo}
-              className="btn btn-primary h-12 px-6 text-base shadow-[0_0_48px_-12px_rgba(255,255,255,0.7)] motion-safe:animate-[breathe_3s_ease-in-out_1s_infinite]"
+              className="btn btn-primary h-12 px-6 text-base shadow-[0_0_48px_-12px_rgba(255,255,255,0.7)] motion-safe:animate-[breathe_3s_ease-in-out_1s_infinite] [@media(max-height:500px)]:h-10 [@media(max-height:500px)]:text-sm"
             >
               Play Bach now
             </button>
-            <button type="button" onClick={pickFile} className="btn btn-ghost h-12 px-5 text-base">
+            <button
+              type="button"
+              onClick={pickFile}
+              className="btn btn-ghost h-12 px-5 text-base [@media(max-height:500px)]:h-10 [@media(max-height:500px)]:text-sm"
+            >
               Open your own .mid
             </button>
           </div>
-          <p className="mt-3 text-xs text-zinc-500 motion-safe:animate-[rise_.7s_.3s_ease-out_both]">
+          <p className="mt-3 text-xs text-zinc-500 motion-safe:animate-[rise_.7s_.3s_ease-out_both] [@media(max-height:500px)]:hidden">
             or just press any key · free songs at bitmidi.com
           </p>
 
-          <ul className="mt-10 hidden max-w-3xl grid-cols-3 gap-3 text-left sm:grid motion-safe:animate-[rise_.7s_.4s_ease-out_both]">
+          <ul className="mt-10 hidden max-w-3xl grid-cols-3 gap-3 text-left sm:grid motion-safe:animate-[rise_.7s_.4s_ease-out_both] [@media(max-height:500px)]:hidden">
             <Fact title="It keeps the tempo." body="Easy mode holds the song’s own rhythm. Tap along; you can’t be early or late." />
             <Fact title="Real instruments." body="Seventeen voices, fourteen sampled from real recordings, from a grand piano to a music box." />
             <Fact title="Nothing leaves your device." body="Your file is read right here in the browser. No upload, no account, no waiting." />
@@ -329,7 +337,7 @@ export default function MagicPiano() {
 
       {/* first-tap prompt, floating in the lane just above the keys */}
       {song && !state.tapped && !sheet && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[36%] flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 bottom-[36%] flex justify-center [@media(max-height:500px)]:bottom-auto [@media(max-height:500px)]:top-16">
           <p className="animate-[float_2.4s_ease-in-out_infinite] rounded-full bg-black/55 px-4 py-2 text-sm text-zinc-100 ring-1 ring-white/15 backdrop-blur motion-reduce:animate-none">
             press <kbd className="mx-1 rounded bg-white/15 px-1.5 py-0.5 font-mono text-[11px]">any key</kbd> or tap the piano
           </p>
@@ -372,7 +380,7 @@ export default function MagicPiano() {
       {sheet && (
         <div className="absolute inset-0 z-10 flex items-end justify-center bg-black/30 sm:items-start sm:pt-16" onClick={() => setSheet(null)}>
           <div
-            className="card w-full max-w-lg !rounded-t-3xl !rounded-b-none bg-[#0d0d16]/95 !p-5 shadow-2xl backdrop-blur-2xl motion-safe:animate-[sheet-in_.22s_ease-out] sm:!rounded-3xl"
+            className="card max-h-[calc(100dvh-5rem)] w-full max-w-lg overflow-y-auto !rounded-t-3xl !rounded-b-none bg-[#0d0d16]/95 !p-5 shadow-2xl backdrop-blur-2xl motion-safe:animate-[sheet-in_.22s_ease-out] sm:!rounded-3xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-label={sheet === "song" ? "Song options" : sheet === "beat" ? "Beat options" : "Sound options"}

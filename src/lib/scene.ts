@@ -32,8 +32,23 @@ import { Post } from "./post";
 // ---------- layout (world units; the camera frames exactly this box) ----------
 const LOW = 36; // C2
 const HIGH = 96; // C7
+// The full keyboard is always built; the camera frames as many whole octaves
+// of it as fit with usable keys. Where you tap does not matter (every tap is
+// the next note), so the keys only have to look and feel tappable.
+// Mouse: 34 css px per white key keeps every laptop from 1224 px up on the full
+// keyboard. Touch: 48 px, a fingertip, so a phone shows one octave, an iPad
+// two or three.
+const MIN_WHITE_PX = 34;
+const MIN_WHITE_PX_TOUCH = 48;
+// Visible windows by octave count, low and high midi. All run C to C. Middle C
+// up (C4–C5) is always on screen; extra room goes up an octave first, then to
+// the bass. Five octaves is the whole keyboard.
+const WINDOWS: Record<number, [number, number]> = { 1: [60, 72], 2: [60, 84], 3: [48, 84], 4: [36, 84], 5: [LOW, HIGH] };
+const MIN_OCTAVES = 1;
+const MAX_OCTAVES = 5;
 const WHITE_W = 1;
-const KEY_H = 6.2; // white key height (≈33% of a 16:9 stage)
+const KEY_H = 6.2; // white key height at full size (≈33% of a 16:9 stage)
+const KEY_H_MAX_FRAC = 0.42; // on short wide screens (a phone sideways) the keys shrink to leave a lane
 const BLACK_H = 3.9;
 const BLACK_W = 0.58;
 const LANE_H = 14; // nominal lane height; the real height follows the viewport
@@ -132,8 +147,36 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
 
   // Orthographic: a flat, straight-on view where world x maps to screen x
   // linearly, so falling bars line up exactly with the keys below them.
+  // resize() narrows left/right to the visible window on small screens.
   const camera = new OrthographicCamera(0, width, height, 0, 0.1, 100);
   camera.position.z = 10;
+
+  // ---------- visible window ----------
+  // The camera shows [x0, x1] of the keyboard, keys visLow..visHigh. Every note
+  // the song plays is folded by octaves into that window, so nothing lights up
+  // off screen.
+  let visLow = LOW;
+  let visHigh = HIGH;
+  let x0 = 0;
+  let x1 = width;
+  function fold(midi: number): number {
+    while (midi < visLow) midi += 12;
+    while (midi > visHigh) midi -= 12;
+    return midi;
+  }
+  const minWhitePx = matchMedia("(pointer: coarse)").matches ? MIN_WHITE_PX_TOUCH : MIN_WHITE_PX;
+  /** Pick the widest window whose white keys are still at least minWhitePx across. */
+  function setWindow(cssWidth: number): void {
+    let octaves = MAX_OCTAVES;
+    while (octaves > MIN_OCTAVES && (octaves * 7 + 1) * minWhitePx > cssWidth) octaves--;
+    const [lo, hi] = WINDOWS[octaves];
+    if (lo === visLow && hi === visHigh) return;
+    visLow = lo;
+    visHigh = hi;
+    x0 = byMidi.get(lo)!.x - WHITE_W / 2;
+    x1 = byMidi.get(hi)!.x + WHITE_W / 2;
+    attractCache = new WeakMap(); // shifted copies were folded into the old window
+  }
 
   // ---------- key faces, drawn by a shader so press/glow is one uniform array ----------
   const keyGeo = new PlaneGeometry(1, 1);
@@ -143,14 +186,24 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
   const aPress = new Float32Array(keyCount);
   const aGlow = new Float32Array(keyCount * 3);
   const dummy = new Object3D();
-  keys.forEach((k, i) => {
-    const h = k.black ? BLACK_H : KEY_H;
-    dummy.position.set(k.x, k.black ? KEY_H - h / 2 : h / 2, k.black ? 0.2 : 0);
-    dummy.scale.set(k.black ? BLACK_W : WHITE_W - 0.06, h - (k.black ? 0 : 0.08), 1);
-    dummy.updateMatrix();
-    keyMesh.setMatrixAt(i, dummy.matrix);
-    aBlack[i] = k.black ? 1 : 0;
-  });
+  keys.forEach((k, i) => (aBlack[i] = k.black ? 1 : 0));
+  // Key height follows the viewport (see resize); everything that stands on the
+  // keys reads keyH, never the constant.
+  let keyH = KEY_H;
+  let blackH = BLACK_H;
+  function layoutKeys(h: number): void {
+    keyH = h;
+    blackH = h * (BLACK_H / KEY_H);
+    keys.forEach((k, i) => {
+      const kh = k.black ? blackH : keyH;
+      dummy.position.set(k.x, k.black ? keyH - kh / 2 : kh / 2, k.black ? 0.2 : 0);
+      dummy.scale.set(k.black ? BLACK_W : WHITE_W - 0.06, kh - (k.black ? 0 : 0.08), 1);
+      dummy.updateMatrix();
+      keyMesh.setMatrixAt(i, dummy.matrix);
+    });
+    keyMesh.instanceMatrix.needsUpdate = true;
+  }
+  layoutKeys(KEY_H);
   keyGeo.setAttribute("aBlack", new InstancedBufferAttribute(aBlack, 1));
   keyGeo.setAttribute("aPress", new InstancedBufferAttribute(aPress, 1));
   keyGeo.setAttribute("aGlow", new InstancedBufferAttribute(aGlow, 3));
@@ -241,6 +294,7 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
   let attractIdx = 0;
   let attractNext = 0; // wall-clock ms of the next attract step (0 = not started)
   let laneHeight = LANE_H; // visible lane height in world units, set by resize()
+  let flameScale = 1; // flames shrink with the lane so a short lane is not a wall of fire
   let lastTime = performance.now();
   let raf = 0;
   let disposed = false;
@@ -264,13 +318,10 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
    */
   const ATTRACT_SHIFT = -24;
   function attractKey(midi: number): number {
-    let m = midi + ATTRACT_SHIFT;
-    while (m < LOW) m += 12;
-    while (m > HIGH) m -= 12;
-    return m;
+    return fold(midi + ATTRACT_SHIFT);
   }
-  // shifted copies are built once per step and reused every frame
-  const attractCache = new WeakMap<AttractStep, PlayedNote[]>();
+  // shifted copies are built once per step and reused every frame (reset when the window changes)
+  let attractCache = new WeakMap<AttractStep, PlayedNote[]>();
   function attractNotes(step: AttractStep): PlayedNote[] {
     let notes = attractCache.get(step);
     if (!notes) {
@@ -305,7 +356,7 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
     key.glow.copy(hsl(h, 0.9, 0.6));
     if (dim) key.glow.multiplyScalar(0.6);
     const n = dim ? 2 + Math.round(velocity * 3) : 5 + Math.round(velocity * 6);
-    for (let i = 0; i < n; i++) spark(key.x, KEY_H + 0.2, h, 3 + velocity * 3);
+    for (let i = 0; i < n; i++) spark(key.x, keyH + 0.2, h, 3 + velocity * 3);
   }
 
   function tap(e: TapEvent): void {
@@ -313,10 +364,7 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
     energy = Math.min(1.5, energy + 0.4 + e.velocity * 0.3);
     for (const n of e.notes) {
       if (n.percussion) continue;
-      let midi = n.midi;
-      while (midi < LOW) midi += 12;
-      while (midi > HIGH) midi -= 12;
-      const key = byMidi.get(midi);
+      const key = byMidi.get(fold(n.midi));
       if (key) ignite(key, noteHue(n), e.velocity);
     }
     refresh();
@@ -408,18 +456,15 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
       let y0: number;
       if (timed) {
         const eta = Math.max(0, u.eta - laneTime);
-        y0 = KEY_H + 0.3 + eta * FALL_SPEED;
+        y0 = keyH + 0.3 + eta * FALL_SPEED;
       } else {
-        y0 = KEY_H + 0.35 + (u.distance + (1 - ease)) * BAR_SPACING;
+        y0 = keyH + 0.35 + (u.distance + (1 - ease)) * BAR_SPACING;
       }
-      if (y0 > KEY_H + laneHeight + 2) break;
+      if (y0 > keyH + laneHeight + 2) break;
       if (u.notes.some((n) => !n.percussion)) lowestBarY = Math.min(lowestBarY, y0);
       for (const n of u.notes) {
         if (n.percussion || bar >= MAX_BARS) continue;
-        let midi = n.midi;
-        while (midi < LOW) midi += 12;
-        while (midi > HIGH) midi -= 12;
-        const k = byMidi.get(midi);
+        const k = byMidi.get(fold(n.midi));
         if (!k) continue;
         // bar length follows the note's written length, within readable limits
         const h = timed ? Math.min(2.6, Math.max(0.9, (n.duration ?? 0.3) * FALL_SPEED * 0.8)) : BAR_SPACING * 0.5;
@@ -449,8 +494,8 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
         continue;
       }
       // a column standing on the top edge of the key, shortening as it dies
-      const h = 6.5 + f.life * 5.0;
-      dummy.position.set(f.key.x, KEY_H - 0.2 + h / 2, 0.8);
+      const h = (6.5 + f.life * 5.0) * flameScale;
+      dummy.position.set(f.key.x, keyH - 0.2 + h / 2, 0.8);
       dummy.scale.set(f.key.w * (f.key.black ? 2.4 : 1.5), h, 1);
       dummy.updateMatrix();
       flameMesh.setMatrixAt(live, dummy.matrix);
@@ -535,16 +580,25 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
     const ph = Math.ceil(h * renderer.getPixelRatio());
     if (post) post.setSize(pw, ph);
     else post = new Post(renderer, pw, ph);
-    // Fit the keyboard width to the viewport; the lane takes whatever height
-    // remains above it. Tall screens see more upcoming notes.
-    const aspect = w / h;
-    const viewH = width / aspect;
-    camera.left = 0;
-    camera.right = width;
+    // Fit the visible octaves to the viewport width; the lane takes whatever
+    // height remains above the keys. Tall screens see more upcoming notes.
+    setWindow(w);
+    const viewW = x1 - x0;
+    const viewH = viewW / (w / h);
+    camera.left = x0;
+    camera.right = x1;
     camera.bottom = 0;
     camera.top = viewH;
     camera.updateProjectionMatrix();
-    laneHeight = Math.max(2, viewH - KEY_H);
+    // Full-height keys unless they would swallow the screen (phone sideways).
+    const kh = Math.min(KEY_H, viewH * KEY_H_MAX_FRAC);
+    if (kh !== keyH) {
+      layoutKeys(kh);
+      hitLine.position.y = keyH;
+      lane.position.y = keyH + LANE_H / 2;
+    }
+    laneHeight = Math.max(2, viewH - keyH);
+    flameScale = Math.min(1, laneHeight / 10);
     // point size is in device pixels: ~2 px per size unit at 1x, so sparks land at 4–15 px
     sparkMat.uniforms.uScale.value = (h / viewH) * Math.min(devicePixelRatio, 1.5) * 0.07;
   }
@@ -556,10 +610,10 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
 
   function pick(clientX: number, clientY: number): number | null {
     const r = canvas.getBoundingClientRect();
-    const x = ((clientX - r.left) / r.width) * width;
+    const x = x0 + ((clientX - r.left) / r.width) * (x1 - x0);
     const y = (1 - (clientY - r.top) / r.height) * camera.top;
-    if (y > KEY_H) return null;
-    if (y > KEY_H - BLACK_H) {
+    if (y > keyH) return null;
+    if (y > keyH - blackH) {
       for (const k of keys) if (k.black && Math.abs(x - k.x) <= BLACK_W / 2) return k.midi;
     }
     for (const k of keys) if (!k.black && Math.abs(x - k.x) <= WHITE_W / 2) return k.midi;
@@ -578,6 +632,9 @@ export function createScene(canvas: HTMLCanvasElement, store: PianoStore): Scene
       quietFor,
       pixelRatio: renderer.getPixelRatio(),
       size: [canvas.width, canvas.height],
+      window: [visLow, visHigh],
+      touch: minWhitePx === MIN_WHITE_PX_TOUCH,
+      keyH,
     });
   }
 
